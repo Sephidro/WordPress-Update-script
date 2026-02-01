@@ -1,27 +1,40 @@
 <style>
-  #gov-dashboard { font-family: sans-serif; max-width: 100%; margin: 0 auto; }
+  /* --- BRANDING CONFIGURATION --- */
+  :root {
+    --primary-color: #003366; /* Header Background (Navy) */
+    --accent-color: #00d084;  /* Button Color (Green) */
+    --text-color: #333;
+    --border-color: #ddd;
+  }
+
+  #gov-dashboard { 
+    font-family: 'Segoe UI', Helvetica, Arial, sans-serif; 
+    max-width: 100%; 
+    margin: 0 auto; 
+  }
   
   /* Search Bar */
   #gov-search {
     width: 100%;
     padding: 12px;
     margin-bottom: 20px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border-color);
     border-radius: 4px;
     font-size: 16px;
+    box-sizing: border-box; /* Fixes padding width issues */
   }
 
   /* The Month Accordion */
   details.gov-month {
     background: #fff;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border-color);
     margin-bottom: 10px;
     border-radius: 4px;
     overflow: hidden;
   }
   
   details.gov-month summary {
-    background-color: #01103D; /* School Blue */
+    background-color: var(--primary-color);
     color: white;
     padding: 15px;
     font-size: 18px;
@@ -33,20 +46,12 @@
     align-items: center;
   }
   
-  details.gov-month summary::after {
-    content: '+'; 
-    font-size: 20px;
-  }
-  
-  details.gov-month[open] summary::after {
-    content: '-';
-  }
+  /* Custom Arrow Icons */
+  details.gov-month summary::after { content: '+'; font-size: 20px; font-weight: bold; }
+  details.gov-month[open] summary::after { content: '-'; }
 
-  /* The File List inside the Month */
-  .gov-file-list {
-    padding: 0;
-    margin: 0;
-  }
+  /* The File List */
+  .gov-file-list { padding: 0; margin: 0; }
   
   .gov-file-item {
     display: flex;
@@ -55,25 +60,38 @@
     padding: 15px;
     border-bottom: 1px solid #eee;
     background: #fff;
+    transition: background 0.2s;
   }
   
+  .gov-file-item:hover { background-color: #f9f9f9; }
   .gov-file-item:last-child { border-bottom: none; }
   
-  .gov-file-title { font-weight: 500; color: #333; }
+  .gov-file-title { 
+    font-weight: 500; 
+    color: var(--text-color); 
+    flex-grow: 1; 
+    padding-right: 15px;
+  }
   
   .gov-btn {
-    background-color: #13B187; /* Your School Green */
+    background-color: var(--accent-color);
     color: white;
     padding: 8px 15px;
     text-decoration: none;
     border-radius: 4px;
     font-size: 14px;
     font-weight: bold;
+    white-space: nowrap; /* Prevents button text wrapping */
   }
   
   .gov-btn:hover { opacity: 0.9; color: white; }
+  .loading-msg { text-align: center; color: #666; margin: 20px; font-style: italic; }
   
-  .loading-msg { text-align: center; color: #666; margin: 20px; }
+  /* Mobile Responsiveness */
+  @media (max-width: 600px) {
+    .gov-file-item { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .gov-btn { width: 100%; text-align: center; }
+  }
 </style>
 
 <div id="gov-dashboard">
@@ -84,21 +102,25 @@
 </div>
 
 <script>
-  // CONFIGURATION
-  const SITE_URL = '/wp-json/wp/v2/posts'; 
-  const CAT_ID = 95; // Your Governance Category ID
-  const PER_PAGE = 100; // Number of docs to load
+  // --- CONFIGURATION ---
+  const API_ROOT = '/wp-json/wp/v2/posts'; // Relative path assumes same domain
+  const CATEGORY_ID = 1; // REPLACE WITH YOUR GOVERNANCE CATEGORY ID
+  const DOCS_LIMIT = 100; // Max number of docs to retrieve
 
   async function loadGovernanceDocs() {
     const container = document.getElementById('gov-container');
     
     try {
-      // 1. Fetch data (WITH CACHE BUSTER ADDED)
-      const response = await fetch(`${SITE_URL}?categories=${CAT_ID}&per_page=${PER_PAGE}&_embed&cache_buster=${new Date().getTime()}`);
+      // 1. Fetch data (Includes Cache Buster to prevent stale lists)
+      const fetchUrl = `${API_ROOT}?categories=${CATEGORY_ID}&per_page=${DOCS_LIMIT}&_embed&cache_buster=${new Date().getTime()}`;
+      const response = await fetch(fetchUrl);
+      
+      if (!response.ok) throw new Error('API Response not OK');
+      
       const posts = await response.json();
       
       if(posts.length === 0) {
-        container.innerHTML = '<p>No documents found.</p>';
+        container.innerHTML = '<p class="loading-msg">No documents found.</p>';
         return;
       }
 
@@ -106,6 +128,7 @@
       const grouped = {};
       posts.forEach(post => {
         const date = new Date(post.date);
+        // Groups by "Month Year" (e.g., January 2026)
         const monthKey = date.toLocaleString('default', { month: 'long', year: 'numeric' });
         if (!grouped[monthKey]) { grouped[monthKey] = []; }
         grouped[monthKey].push(post);
@@ -113,11 +136,10 @@
 
       // 3. Build HTML
       let html = '';
-      let isFirstMonth = true; // <--- The Logic Flag
+      let isFirstMonth = true; 
 
       for (const [month, monthPosts] of Object.entries(grouped)) {
-        
-        // CHECK: Only add 'open' if it is the first month
+        // Automatically open ONLY the first month (Current month)
         const openAttribute = isFirstMonth ? 'open' : '';
         
         html += `
@@ -127,7 +149,8 @@
         `;
         
         monthPosts.forEach(post => {
-          // Extract link (either from our button or the post link)
+          // Attempt to extract the PDF link from the post content (Hacker Method)
+          // It looks for the first <a> tag inside the post body.
           const tempDiv = document.createElement('div');
           tempDiv.innerHTML = post.content.rendered;
           const link = tempDiv.querySelector('a')?.href || post.link;
@@ -141,19 +164,18 @@
         });
         
         html += `</div></details>`;
-        
-        isFirstMonth = false; // <--- Turn off the flag after the first loop
+        isFirstMonth = false; 
       }
       
       container.innerHTML = html;
       
     } catch (err) {
       console.error(err);
-      container.innerHTML = '<p>Error loading documents.</p>';
+      container.innerHTML = '<p class="loading-msg">⚠️ Unable to load documents. Please refresh.</p>';
     }
   }
 
-  // Search Function
+  // Client-Side Search Function
   function filterDocs() {
     const input = document.getElementById('gov-search').value.toLowerCase();
     const items = document.querySelectorAll('.gov-file-item');
@@ -162,7 +184,7 @@
       const term = item.getAttribute('data-search');
       if (term.includes(input)) {
         item.style.display = 'flex';
-        // Auto-open the accordion if a search match is found inside
+        // Auto-expand the accordion if a match is found inside
         item.closest('details').open = true; 
       } else {
         item.style.display = 'none';
