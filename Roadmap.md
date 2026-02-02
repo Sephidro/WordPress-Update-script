@@ -27,3 +27,23 @@ Current State: Google Apps Script has a 6-minute execution limit. Uploading 50+ 
 Workaround: The script currently uses processed flags to resume where it left off on the next hourly trigger.
 
 Planned Update: Implement a "Queue System" that stops processing after 4.5 minutes to ensure a graceful exit before the timeout.
+
+### Frontend Dashboard (HTML/JS)
+Pagination & Archives
+Current State: The dashboard fetches the most recent 100 documents.
+
+Known Limitation: As the archive grows beyond 100 files, older documents will drop off the visual feed (though they remain in WordPress).
+
+Planned Update: Implement "Load More" pagination or server-side filtering to access deep archives without overloading the initial page load.
+
+Search Logic
+Current State: Client-side search. It filters only the documents currently loaded in the browser.
+
+Planned Update: Switch to Server-Side Search (using WordPress REST API search endpoints) to allow querying the entire database, not just visible files.
+
+Robust Link Extraction
+Current State: The script assumes the first link in the post content is the "Download" button.
+
+Planned Update: Shift to using a dedicated WordPress Meta Field (ACF or similar) to store the PDF URL securely, decoupling it from the post's HTML content.
+
+Found a bug or have a suggestion? Feel free to open an issue or pull request. I am actively building and refining this tool!
