@@ -3,8 +3,7 @@ const FOLDER_ID = 'XXXXXXXXXXXX';
 const WP_SITE_URL = 'XXXXXXXXXXXX';
 const WP_USERNAME = 'XXXXXXXXXXXXX';
 const WP_APP_PASSWORD = 'XXXXXXXXXX'; // App password
-const POST_CATEGORY_ID = 95; // 95 is Governance category
-
+const POST_CATEGORY_ID = XX; // Last digits in category URL (1) (95)
 function checkAndPost() {
   const folder = DriveApp.getFolderById(FOLDER_ID);
   const files = folder.getFiles();
