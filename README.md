@@ -36,7 +36,7 @@ It solves the problem of "Compliance Drudgery" by allowing administrators to sim
 2.  Create a new Trigger:
     * **Function:** `checkAndPost`
     * **Event Source:** Time-driven
-    * **Timer:** Hour timer (Every 1 hour)
+    * **Timer:** Day Timer (8am-9am)
 
 ## ⚠️ Requirements
 * A Google Workspace account.
