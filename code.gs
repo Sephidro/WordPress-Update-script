@@ -30,7 +30,6 @@ function checkAndPost() {
     let fileId = file.getId(); 
     
     // --- 0. SHORTCUT RESOLVER ---
-    // If the file is a shortcut, find the real target ID
     if (file.getMimeType() === "application/vnd.google-apps.shortcut") {
       try {
         let targetId = file.getTargetId();
@@ -42,7 +41,6 @@ function checkAndPost() {
       }
     }
 
-    // Check if this file ID has already been processed
     if (scriptProperties.getProperty(fileId) === 'processed') {
       continue; 
     }
@@ -60,15 +58,12 @@ function checkAndPost() {
     try {
       let tempFileId;
       
-      // A. Setup the conversion config
       if (name.endsWith('.docx') || mime.includes('wordprocessingml')) {
-        // Convert Word to Google Doc for text extraction
         let tempResource = { title: "TEMP_SCAN_" + file.getName(), mimeType: MimeType.GOOGLE_DOCS };
         let tempFile = Drive.Files.copy(tempResource, fileId);
         tempFileId = tempFile.id;
       } 
       else if (mime === MimeType.PDF || mime.includes('image')) {
-        // Convert PDF/Image to Google Doc (Using OCR)
         let tempResource = { title: "TEMP_SCAN_" + file.getName(), mimeType: MimeType.GOOGLE_DOCS };
         let tempFile = Drive.Files.copy(tempResource, fileId, {ocr: true}); 
         tempFileId = tempFile.id;
@@ -77,13 +72,12 @@ function checkAndPost() {
         tempFileId = fileId; 
       }
 
-      // B. EXTRACT TEXT & FIND DATE
+      // EXTRACT TEXT & FIND DATE
       if (tempFileId) {
         let doc = DocumentApp.openById(tempFileId);
         let textBody = doc.getBody().getText();
         detectedDate = findDateInText(textBody); 
         
-        // Prepare the PDF blob for upload
         if (name.endsWith('.docx')) {
            blob = doc.getAs(MimeType.PDF);
            let niceName = file.getName().replace(/\.docx?$/i, ".pdf");
@@ -94,7 +88,6 @@ function checkAndPost() {
            fileNameForWP = file.getName();
         }
 
-        // Cleanup: Delete the temp file
         if (mime !== MimeType.GOOGLE_DOCS) {
           Drive.Files.remove(tempFileId);
         }
@@ -102,14 +95,20 @@ function checkAndPost() {
 
     } catch (err) {
       Logger.log('Scanning/Conversion Failed: ' + err.toString());
-      // Fallback: Use original file if conversion fails
+      // Fallback: If scanning fails, just upload the file as-is
       blob = file.getBlob();
       fileNameForWP = file.getName();
+    } 
+    // ^^^ THIS CLOSING BRACKET WAS THE MISSING KEY ^^^
+    // Now the code below runs whether the conversion succeeded OR failed.
+
+    // --- 1.5 ARCHIVE PROTOCOL ---
+    if (blob) {
+       fileDocumentInDrive(blob, detectedDate); 
     }
 
     // --- 2. UPLOAD AND POST ---
     try {
-      // Step A: Upload to Media Library
       let mediaOptions = {
         'method': 'post',
         'contentType': 'application/pdf', 
@@ -128,17 +127,21 @@ function checkAndPost() {
       let fileLink = mediaData.source_url;
       Logger.log('Media uploaded. Date found: ' + (detectedDate || "None (Using Today)"));
 
-      // Step B: Create Post
       let cleanTitle = fileNameForWP.replace(/\.pdf$/i, ""); 
       
-      // Determine Dates
-      let postDateISO = new Date().toISOString(); // Default to Now
+      let postDateISO = new Date().toISOString(); 
       let displayDate = Utilities.formatDate(new Date(), "GMT-5", "MMMM dd, yyyy");
 
       if (detectedDate) {
-        // Time Travel Logic: Backdate post to the meeting date
-        postDateISO = detectedDate.toISOString().split('T')[0] + 'T12:00:00';
         displayDate = Utilities.formatDate(detectedDate, "GMT-5", "MMMM dd, yyyy");
+        let now = new Date();
+        if (detectedDate < now) {
+          // Past: Backdate
+          postDateISO = detectedDate.toISOString().split('T')[0] + 'T12:00:00';
+        } else {
+          // Future: Publish Now
+          postDateISO = now.toISOString();
+        }
       }
 
       let htmlContent = `
@@ -174,8 +177,7 @@ function checkAndPost() {
       let postResponse = UrlFetchApp.fetch(WP_SITE_URL + '/wp-json/wp/v2/posts', postOptions);
       
       if (postResponse.getResponseCode() === 201) {
-        Logger.log('SUCCESS! Post created for date: ' + postDateISO);
-        // Mark file ID as processed so we don't post it again
+        Logger.log('SUCCESS! Post created.');
         scriptProperties.setProperty(fileId, 'processed'); 
       }
 
@@ -185,18 +187,45 @@ function checkAndPost() {
   }
 }
 
-// --- HELPER: DATE DETECTIVE ---
+// --- DATE DETECT ---
 function findDateInText(text) {
   if (!text) return null;
-  
-  // Regex: Looks for "Month Day, Year" (e.g. December 16, 2025)
   const dateRegex = /(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}/i;
-  
   let match = text.match(dateRegex);
-  
   if (match) {
     let dateStr = match[0].replace(/(st|nd|rd|th)/, ""); 
     return new Date(dateStr);
   }
   return null;
+}
+
+// --- Sort & Distribute ---
+function fileDocumentInDrive(blob, dateObj) {
+  try {
+    const rootFolder = DriveApp.getFolderById(ARCHIVE_ROOT_ID);
+    let folderName = "Unsorted Documents";
+    
+    if (dateObj) { 
+      let year = dateObj.getFullYear();
+      let monthName = dateObj.toLocaleString('default', { month: 'long' });
+      let monthNum = (dateObj.getMonth() + 1).toString().padStart(2, '0');
+      folderName = `${year}-${monthNum} (${monthName})`; 
+    }
+
+    let targetFolder;
+    let subFolders = rootFolder.getFoldersByName(folderName);
+
+    if (subFolders.hasNext()){
+      targetFolder = subFolders.next();
+    } else {
+      targetFolder = rootFolder.createFolder(folderName);
+      Logger.log('Created new archive folder: ' + folderName);
+    }
+    
+    targetFolder.createFile(blob);
+    Logger.log('File archived to: ' + folderName);
+  
+  } catch (e) {
+    Logger.log('Filing Error: ' + e.toString());
+  }
 }
